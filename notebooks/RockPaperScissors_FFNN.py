@@ -46,14 +46,19 @@
 # ## 1. Setup and Imports
 
 # %%
+
+import sys
+sys.path.append("..")
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 import os
-from src.data import load_images_as_numpy
 
+from src.data import load_images_as_numpy
+from src.models import build_mlp_model
 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
@@ -242,6 +247,7 @@ def build_mlp_model(input_dim, num_classes):
 
 mlp_model = build_mlp_model(X_train_flat.shape[1], NUM_CLASSES)
 mlp_model.summary()
+
 
 # %% [markdown]
 # ## 7. Compile Model with Optimal Settings
