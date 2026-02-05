@@ -1,0 +1,8 @@
+__pycache__/
+.ipynb_checkpoints/
+data/
+*.keras
+*.h5
+*.pkl
+*.log
+.DS_Store
