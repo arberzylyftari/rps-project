@@ -1,3 +1,19 @@
+# ---
+# jupyter:
+#   jupytext:
+#     formats: ipynb,py:percent
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.1
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
+# %%
 # test change from feature branch
 
 # ---
@@ -36,6 +52,8 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 import os
+from src.data import load_images_as_numpy
+
 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
@@ -108,13 +126,21 @@ def load_images_as_numpy(directory, img_size=(IMG_H, IMG_W)):
 
 # %%
 print("Loading training data...")
-X_train, y_train = load_images_as_numpy(os.path.join(DATA_ROOT, 'train'))
+X_train, y_train, class_names = load_images_as_numpy(
+    os.path.join(DATA_ROOT, 'train')
+)
 
 print("\nLoading validation data...")
-X_val, y_val = load_images_as_numpy(os.path.join(DATA_ROOT, 'val'))
+X_val, y_val, _ = load_images_as_numpy(
+    os.path.join(DATA_ROOT, 'val'),
+    verbose=False
+)
 
 print("\nLoading test data...")
-X_test, y_test = load_images_as_numpy(os.path.join(DATA_ROOT, 'test'))
+X_test, y_test, _ = load_images_as_numpy(
+    os.path.join(DATA_ROOT, 'test'),
+    verbose=False
+)
 
 print("\n" + "="*60)
 print("DATA LOADED SUCCESSFULLY")
