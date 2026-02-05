@@ -1,2 +1,2 @@
 # rps-project
-Rock Paper Scissor Machine Learning
+Rock Paper Scissor Machine Learning Model
