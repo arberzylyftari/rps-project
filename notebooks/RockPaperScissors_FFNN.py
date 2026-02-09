@@ -13,40 +13,34 @@
 #     name: python3
 # ---
 
-# %%
-# test change from feature branch
-
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:percent
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.19.1
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
-
 # %% [markdown]
 # # ROCK-PAPER-SCISSORS: Multi-class Classification
-# ## Using Feed-Forward Neural Networks (MLP)
+# ## Comparing ALL Techniques: MLP → Augmentation → HOG → CNN → Transfer Learning
 #
-# **Goal:** Achieve at least 74% validation accuracy using only MLP (no CNN)
+# **Goal:** Maximize validation accuracy - no more constraints!
 #
 # **Models Compared:**
-# - Decision Tree (Classical ML)
-# - Logistic Regression (Classical ML)
-# - **Multi-Layer Perceptron (MLP)** ← Our main focus
+# 1. Decision Tree (baseline)
+# 2. Logistic Regression (baseline)
+# 3. **MLP** - Feed-Forward Neural Network
+# 4. **MLP + Data Augmentation** - More training data
+# 5. **MLP + HOG Features** - Better features
+# 6. **CNN** - Spatial learning
+# 7. **Transfer Learning** - Pre-trained features
 
 # %% [markdown]
 # ## 1. Setup and Imports
 
 # %%
+import sys
+# !{sys.executable} -m pip install -U scikit-learn
 
+# %%
+import sys
+# !{sys.executable} -m pip install -U scikit-image
+
+
+# %%
 import sys
 sys.path.append("..")
 
@@ -54,27 +48,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers, regularizers
 import os
 
+# Import from src/ modules (no more local function definitions!)
 from src.data import load_images_as_numpy
-from src.models import build_mlp_model
+from src.models import build_mlp_model, build_cnn_model, build_transfer_model
+from src.features import augment_dataset, extract_hog_features
+from src.train import compile_model, get_callbacks
+from src.eval import evaluate_model, plot_history
 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-import seaborn as sns
+from sklearn.metrics import accuracy_score
 import pandas as pd
 
 print("TensorFlow version:", tf.__version__)
-print("TensorFlow version:", keras.__version__)
+print("Keras version:", keras.__version__)
 
 np.random.seed(42)
 tf.random.set_seed(42)
 
 # %%
-DATA_ROOT = "data/rps"
+DATA_ROOT = "../data/rps"
 IMG_H, IMG_W = 224, 224
 BATCH_SIZE = 16
 EPOCHS = 90
@@ -85,49 +80,8 @@ print(f"Data root: {DATA_ROOT}")
 print(f"Image size: {IMG_H}x{IMG_W}")
 print(f"Classes: {CLASSES}")
 
-
 # %% [markdown]
 # ## 2. Load Data as NumPy Arrays
-#
-# For MLP, we need to load images as flattened NumPy arrays.
-
-# %%
-def load_images_as_numpy(directory, img_size=(IMG_H, IMG_W)):
-    """Load all images from directory structure into numpy arrays"""
-    images = []
-    labels = []
-    
-    class_names = sorted(os.listdir(directory))
-    class_to_idx = {name: idx for idx, name in enumerate(class_names)}
-    
-    for class_name in class_names:
-        class_dir = os.path.join(directory, class_name)
-        if not os.path.isdir(class_dir):
-            continue
-            
-        print(f"Loading {class_name}...", end=" ")
-        count = 0
-        
-        for img_name in os.listdir(class_dir):
-            if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                img_path = os.path.join(class_dir, img_name)
-                try:
-                    img = tf.keras.preprocessing.image.load_img(
-                        img_path, target_size=img_size
-                    )
-                    img_array = tf.keras.preprocessing.image.img_to_array(img)
-                    img_array = img_array / 255.0
-                    
-                    images.append(img_array)
-                    labels.append(class_to_idx[class_name])
-                    count += 1
-                except Exception as e:
-                    print(f"\nError loading {img_path}: {e}")
-        
-        print(f"{count} images")
-    
-    return np.array(images), np.array(labels)
-
 
 # %%
 print("Loading training data...")
@@ -174,9 +128,7 @@ plt.suptitle('Sample Training Images', y=1.02, fontsize=14, fontweight='bold')
 plt.show()
 
 # %% [markdown]
-# ## 4. Prepare Data for MLP
-#
-# MLP requires flattened input (convert 224×224×3 to 150,528 features)
+# ## 4. Prepare Data for MLP (Flatten)
 
 # %%
 X_train_flat = X_train.reshape(X_train.shape[0], -1)
@@ -186,11 +138,9 @@ X_test_flat = X_test.reshape(X_test.shape[0], -1)
 print(f"Original shape: {X_train.shape}")
 print(f"Flattened shape: {X_train_flat.shape}")
 print(f"Each image is now a vector of {X_train_flat.shape[1]:,} features")
-print(f"Value range: [{X_train_flat.min():.2f}, {X_train_flat.max():.2f}]")
-print("✓ Data prepared (NO StandardScaler used)")
 
 # %% [markdown]
-# ## 5. Classical ML Baselines (Quick Comparison)
+# ## 5. Classical ML Baselines
 
 # %%
 print("Training Decision Tree...")
@@ -198,7 +148,7 @@ dt_model = DecisionTreeClassifier(max_depth=15, random_state=42)
 dt_model.fit(X_train_flat, y_train)
 y_val_pred_dt = dt_model.predict(X_val_flat)
 dt_acc = accuracy_score(y_val, y_val_pred_dt)
-print(f"✓ Decision Tree Validation Accuracy: {dt_acc:.2%}")
+print(f"Decision Tree Validation Accuracy: {dt_acc:.2%}")
 
 # %%
 print("Training Logistic Regression...")
@@ -206,97 +156,24 @@ lr_model = LogisticRegression(max_iter=1000, random_state=42, C=0.1)
 lr_model.fit(X_train_flat, y_train)
 y_val_pred_lr = lr_model.predict(X_val_flat)
 lr_acc = accuracy_score(y_val, y_val_pred_lr)
-print(f"✓ Logistic Regression Validation Accuracy: {lr_acc:.2%}")
-
+print(f"Logistic Regression Validation Accuracy: {lr_acc:.2%}")
 
 # %% [markdown]
-# ## 6. Build Optimized MLP Model
-#
-# **Strategy to reach 74%+ accuracy:**
-# - Deep architecture (3 hidden layers)
-# - Batch Normalization for stable training
-# - Dropout to prevent overfitting
-# - L2 regularization
-# - Proper learning rate
+# ## 6. Baseline MLP Model
 
 # %%
-def build_mlp_model(input_dim, num_classes):
-    """Build an optimized MLP for image classification"""
-    
-    model = keras.Sequential([
-        tf.keras.layers.Input(shape=(X_train_flat.shape[1],)),
-        tf.keras.layers.Dense(512),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-        tf.keras.layers.Dropout(0.4),
-    
-        tf.keras.layers.Dense(256),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-        tf.keras.layers.Dropout(0.3),
-    
-        tf.keras.layers.Dense(128),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-        tf.keras.layers.Dropout(0.2),
-    
-        tf.keras.layers.Dense(3, activation="softmax")
-    ], name='MLP_Optimized')
-    
-    return model
-
 mlp_model = build_mlp_model(X_train_flat.shape[1], NUM_CLASSES)
 mlp_model.summary()
 
-
-# %% [markdown]
-# ## 7. Compile Model with Optimal Settings
-
 # %%
-initial_learning_rate = 0.001
+compile_model(mlp_model)
+callbacks = get_callbacks()
 
-mlp_model.compile(
-    optimizer=keras.optimizers.Adam(learning_rate=initial_learning_rate),
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
-)
-
-print("Model compiled with optimized settings")
-
-# %% [markdown]
-# ## 8. Setup Training Callbacks
-
-# %%
-early_stopping = keras.callbacks.EarlyStopping(
-    monitor='val_accuracy',
-    patience=10,
-    restore_best_weights=True,
-    verbose=1
-)
-
-reduce_lr = keras.callbacks.ReduceLROnPlateau(
-    monitor='val_loss',
-    factor=0.5,
-    patience=5,
-    min_lr=1e-6,
-    verbose=1
-)
-
-callbacks = [early_stopping, reduce_lr]
-print("Callbacks configured")
-
-# %% [markdown]
-# ## 9. Train the MLP Model
-#
-# **Target: > 74% Validation Accuracy**
-
-# %%
 print("="*70)
-print("TRAINING MLP MODEL")
+print("TRAINING BASELINE MLP")
 print("="*70)
-print(f"Target: ≥74% validation accuracy\n")
 
-history = mlp_model.fit(
+history_mlp = mlp_model.fit(
     X_train_flat, y_train,
     validation_data=(X_val_flat, y_val),
     epochs=EPOCHS,
@@ -305,146 +182,156 @@ history = mlp_model.fit(
     verbose=1
 )
 
-print("\n" + "="*70)
-print("TRAINING COMPLETE!")
-print("="*70)
+mlp_val_loss, mlp_val_acc = mlp_model.evaluate(X_val_flat, y_val, verbose=0)
+print(f"\nBaseline MLP Validation Accuracy: {mlp_val_acc:.2%}")
+plot_history(history_mlp, title="Baseline MLP")
 
 # %% [markdown]
-# ## 10. Evaluate on Validation Set
+# ## 7. MLP + Data Augmentation
 
 # %%
-val_loss, val_acc = mlp_model.evaluate(X_val_flat, y_val, verbose=0)
+print("Augmenting training data...")
+X_train_aug, y_train_aug = augment_dataset(X_train, y_train, augment_factor=2)
+print(f"Original training size: {len(X_train)}")
+print(f"Augmented training size: {len(X_train_aug)}")
 
-print("\n" + "="*70)
-print("VALIDATION RESULTS")
-print("="*70)
-print(f"Validation Accuracy: {val_acc:.2%}")
-print(f"Validation Loss: {val_loss:.4f}")
-
-if val_acc > 0.74:
-    print(f"\n SUCCESS! Achieved target of > 74% (got {val_acc:.2%})")
-else:
-    print(f"\n Below target, need more work in the model. Got {val_acc:.2%}, need > 74%")
-    print("Try running the training cell again or increase EPOCHS")
-
-print("="*70)
-
-# %% [markdown]
-# ## 11. Evaluate on Test Set
+X_train_aug_flat = X_train_aug.reshape(X_train_aug.shape[0], -1)
 
 # %%
-y_test_pred = mlp_model.predict(X_test_flat, verbose=0)
-y_test_pred_labels = np.argmax(y_test_pred, axis=1)
+mlp_aug_model = build_mlp_model(X_train_aug_flat.shape[1], NUM_CLASSES)
+compile_model(mlp_aug_model)
+callbacks_aug = get_callbacks()
 
-test_acc = accuracy_score(y_test, y_test_pred_labels)
-
-print("\n" + "="*70)
-print("TEST SET RESULTS")
 print("="*70)
-print(f"Test Accuracy: {test_acc:.2%}\n")
-
-print("Classification Report:")
-print(classification_report(y_test, y_test_pred_labels, target_names=CLASSES))
+print("TRAINING MLP + DATA AUGMENTATION")
 print("="*70)
+
+history_mlp_aug = mlp_aug_model.fit(
+    X_train_aug_flat, y_train_aug,
+    validation_data=(X_val_flat, y_val),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    callbacks=callbacks_aug,
+    verbose=1
+)
+
+_, mlp_aug_val_acc = mlp_aug_model.evaluate(X_val_flat, y_val, verbose=0)
+print(f"\nMLP + Augmentation Validation Accuracy: {mlp_aug_val_acc:.2%}")
+plot_history(history_mlp_aug, title="MLP + Data Augmentation")
 
 # %% [markdown]
-# ## Evaluate on Validation Set
+# ## 8. MLP + HOG Features
 
 # %%
-y_val_pred = mlp_model.predict(X_val_flat, verbose=0)
-y_val_pred_labels = np.argmax(y_val_pred, axis=1)
+print("Extracting HOG features...")
+X_train_hog = extract_hog_features(X_train)
+X_val_hog = extract_hog_features(X_val)
+X_test_hog = extract_hog_features(X_test)
 
-val_acc = accuracy_score(y_val, y_val_pred_labels)
-
-print("\n" + "="*70)
-print("VALIDATION SET RESULTS")
-print("="*70)
-print(f"Validation Accuracy: {val_acc:.2%}\n")
-
-print("Classification Report:")
-print(classification_report(y_val, y_val_pred_labels, target_names=CLASSES))
-print("="*70)
-
-
-# %% [markdown]
-# ## 12. Visualize Training History
+print(f"Original features: {X_train_flat.shape[1]:,}")
+print(f"HOG features: {X_train_hog.shape[1]:,}")
 
 # %%
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+mlp_hog_model = build_mlp_model(X_train_hog.shape[1], NUM_CLASSES)
+compile_model(mlp_hog_model)
+callbacks_hog = get_callbacks()
 
-axes[0].plot(history.history['accuracy'], label='Training', linewidth=2)
-axes[0].plot(history.history['val_accuracy'], label='Validation', linewidth=2)
-axes[0].axhline(y=0.74, color='r', linestyle='--', label='Target (74%)', linewidth=2)
-axes[0].set_title('Model Accuracy', fontsize=14, fontweight='bold')
-axes[0].set_xlabel('Epoch', fontsize=12)
-axes[0].set_ylabel('Accuracy', fontsize=12)
-axes[0].legend(fontsize=10)
-axes[0].grid(True, alpha=0.3)
+print("="*70)
+print("TRAINING MLP + HOG FEATURES")
+print("="*70)
 
-axes[1].plot(history.history['loss'], label='Training', linewidth=2)
-axes[1].plot(history.history['val_loss'], label='Validation', linewidth=2)
-axes[1].set_title('Model Loss', fontsize=14, fontweight='bold')
-axes[1].set_xlabel('Epoch', fontsize=12)
-axes[1].set_ylabel('Loss', fontsize=12)
-axes[1].legend(fontsize=10)
-axes[1].grid(True, alpha=0.3)
+history_mlp_hog = mlp_hog_model.fit(
+    X_train_hog, y_train,
+    validation_data=(X_val_hog, y_val),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    callbacks=callbacks_hog,
+    verbose=1
+)
 
-plt.tight_layout()
-plt.show()
-
-max_val_acc = max(history.history['val_accuracy'])
-max_epoch = history.history['val_accuracy'].index(max_val_acc) + 1
-print(f"\nBest validation accuracy: {max_val_acc:.2%} (at epoch {max_epoch})")
+_, mlp_hog_val_acc = mlp_hog_model.evaluate(X_val_hog, y_val, verbose=0)
+print(f"\nMLP + HOG Validation Accuracy: {mlp_hog_val_acc:.2%}")
+plot_history(history_mlp_hog, title="MLP + HOG Features")
 
 # %% [markdown]
-# ## 13. Confusion Matrices
+# ## 9. CNN Model
 
 # %%
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+cnn_model = build_cnn_model((IMG_H, IMG_W, 3), NUM_CLASSES)
+cnn_model.summary()
 
-y_val_pred = mlp_model.predict(X_val_flat, verbose=0)
-y_val_pred_labels = np.argmax(y_val_pred, axis=1)
-cm_val = confusion_matrix(y_val, y_val_pred_labels)
+# %%
+compile_model(cnn_model)
+callbacks_cnn = get_callbacks()
 
-sns.heatmap(cm_val, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=CLASSES, yticklabels=CLASSES, ax=axes[0],
-            cbar_kws={'label': 'Count'})
-axes[0].set_title(f'Validation Set\nAccuracy: {val_acc:.2%}', fontsize=12, fontweight='bold')
-axes[0].set_ylabel('True Label', fontsize=11)
-axes[0].set_xlabel('Predicted Label', fontsize=11)
+print("="*70)
+print("TRAINING CNN")
+print("="*70)
 
-# Test confusion matrix
-cm_test = confusion_matrix(y_test, y_test_pred_labels)
-sns.heatmap(cm_test, annot=True, fmt='d', cmap='Greens',
-            xticklabels=CLASSES, yticklabels=CLASSES, ax=axes[1],
-            cbar_kws={'label': 'Count'})
-axes[1].set_title(f'Test Set\nAccuracy: {test_acc:.2%}', fontsize=12, fontweight='bold')
-axes[1].set_ylabel('True Label', fontsize=11)
-axes[1].set_xlabel('Predicted Label', fontsize=11)
+history_cnn = cnn_model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    callbacks=callbacks_cnn,
+    verbose=1
+)
 
-plt.tight_layout()
-plt.show()
+_, cnn_val_acc = cnn_model.evaluate(X_val, y_val, verbose=0)
+print(f"\nCNN Validation Accuracy: {cnn_val_acc:.2%}")
+plot_history(history_cnn, title="CNN")
 
 # %% [markdown]
-# ## 14. Final Comparison: Classical ML vs MLP
+# ## 10. Transfer Learning (MobileNetV2)
+
+# %%
+transfer_model = build_transfer_model(NUM_CLASSES, input_shape=(IMG_H, IMG_W, 3))
+transfer_model.summary()
+
+# %%
+compile_model(transfer_model, learning_rate=0.0001)
+callbacks_transfer = get_callbacks(patience=15)
+
+print("="*70)
+print("TRAINING TRANSFER LEARNING (MobileNetV2)")
+print("="*70)
+
+history_transfer = transfer_model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=50,
+    batch_size=BATCH_SIZE,
+    callbacks=callbacks_transfer,
+    verbose=1
+)
+
+_, transfer_val_acc = transfer_model.evaluate(X_val, y_val, verbose=0)
+print(f"\nTransfer Learning Validation Accuracy: {transfer_val_acc:.2%}")
+plot_history(history_transfer, title="Transfer Learning (MobileNetV2)")
+
+# %% [markdown]
+# ## 11. Final Comparison
 
 # %%
 results = pd.DataFrame({
     'Model': [
         'Decision Tree',
         'Logistic Regression',
-        'MLP (Feed-Forward NN)'
+        'MLP (Baseline)',
+        'MLP + Augmentation',
+        'MLP + HOG',
+        'CNN',
+        'Transfer Learning'
     ],
     'Validation Accuracy (%)': [
         dt_acc * 100,
         lr_acc * 100,
-        val_acc * 100
+        mlp_val_acc * 100,
+        mlp_aug_val_acc * 100,
+        mlp_hog_val_acc * 100,
+        cnn_val_acc * 100,
+        transfer_val_acc * 100,
     ],
-    'Test Accuracy (%)': [
-        accuracy_score(y_test, dt_model.predict(X_test_flat)) * 100,
-        accuracy_score(y_test, lr_model.predict(X_test_flat)) * 100,
-        test_acc * 100
-    ]
 })
 
 results = results.sort_values('Validation Accuracy (%)', ascending=False).reset_index(drop=True)
@@ -455,72 +342,54 @@ print("="*70)
 print(results.to_string(index=False))
 print("="*70)
 
-fig, ax = plt.subplots(figsize=(10, 6))
-x = np.arange(len(results))
-width = 0.35
-
-bars1 = ax.bar(x - width/2, results['Validation Accuracy (%)'], width, 
-               label='Validation', color='steelblue')
-bars2 = ax.bar(x + width/2, results['Test Accuracy (%)'], width,
-               label='Test', color='lightcoral')
-
-ax.axhline(y=74, color='red', linestyle='--', linewidth=2, label='Target (75%)')
-ax.set_xlabel('Model', fontsize=12, fontweight='bold')
-ax.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
-ax.set_title('Model Comparison - Validation vs Test Accuracy', fontsize=14, fontweight='bold')
-ax.set_xticks(x)
-ax.set_xticklabels(results['Model'], rotation=15, ha='right')
+fig, ax = plt.subplots(figsize=(12, 6))
+colors = plt.cm.RdYlGn(np.linspace(0.2, 0.9, len(results)))
+bars = ax.barh(results['Model'], results['Validation Accuracy (%)'], color=colors)
+ax.axvline(x=74, color='red', linestyle='--', linewidth=2, label='Original Target (74%)')
+ax.set_xlabel('Validation Accuracy (%)', fontsize=12, fontweight='bold')
+ax.set_title('Model Comparison - Validation Accuracy', fontsize=14, fontweight='bold')
 ax.legend(fontsize=10)
-ax.grid(axis='y', alpha=0.3)
-ax.set_ylim(0, 105)
+ax.grid(axis='x', alpha=0.3)
+ax.set_xlim(0, 105)
 
-def autolabel(bars):
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{height:.1f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
-
-autolabel(bars1)
-autolabel(bars2)
+for bar, val in zip(bars, results['Validation Accuracy (%)']):
+    ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+            f'{val:.1f}%', ha='left', va='center', fontsize=10, fontweight='bold')
 
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ## 15. Saving the Model
+# ## 12. Evaluate Best Model
 
 # %%
-mlp_model.save('rps_model.keras')
-print("✓ Model saved as: rps_model.keras")
-print("\n" + "="*70)
-print("="*70)
+best_model_name = results.iloc[0]['Model']
+print(f"Best model: {best_model_name}")
+
+# Evaluate best model with confusion matrix
+if best_model_name == 'Transfer Learning':
+    best_model = transfer_model
+    X_val_input, X_test_input = X_val, X_test
+elif best_model_name == 'CNN':
+    best_model = cnn_model
+    X_val_input, X_test_input = X_val, X_test
+elif best_model_name == 'MLP + HOG':
+    best_model = mlp_hog_model
+    X_val_input, X_test_input = X_val_hog, X_test_hog
+elif best_model_name == 'MLP + Augmentation':
+    best_model = mlp_aug_model
+    X_val_input, X_test_input = X_val_flat, X_test_flat
+else:
+    best_model = mlp_model
+    X_val_input, X_test_input = X_val_flat, X_test_flat
+
+evaluate_model(best_model, X_val_input, y_val, X_test_input, y_test, CLASSES)
 
 # %% [markdown]
-# ## 16. Key Findings
-#
-# ### What We Learned:
-#
-# 1. **Classical ML (Decision Tree, Logistic Regression)**:
-#    - Simpler models with limited capacity
-#    - Treat images as independent features
-#    - Faster to train but lower accuracy
-#
-# 2. **Feed-Forward Neural Network (MLP)**:
-#    - Can learn complex non-linear patterns
-#    - Multiple hidden layers capture hierarchical features
-#    - Regularization (Dropout, L2) prevents overfitting
-#    - Batch Normalization stabilizes training
-#    - **Significantly better performance** on image data
-#
-# ### Why MLP Works Better:
-# - **Deep architecture**: Multiple layers learn increasingly complex patterns
-# - **Non-linearity**: ReLU activation allows learning complex decision boundaries
-# - **Regularization**: Prevents memorizing training data
-# - **Optimization**: Adam with learning rate scheduling finds better solutions
-#
-# ### Limitations of MLP for Images:
-# - Still treats image as flat vector (loses spatial structure)
-# - Requires many parameters (memory intensive)
-# - Not translation invariant (object must be in same position)
-# - **Note**: CNNs would perform even better by preserving 2D structure, but they're not allowed for this assignment
-#
+# ## 13. Save Best Model
+
+# %%
+best_model.save('rps_best_model.keras')
+print(f"Best model ({best_model_name}) saved as: rps_best_model.keras")
+
+# %%
