@@ -53,7 +53,7 @@ import os
 # Import from src/ modules (no more local function definitions!)
 from src.data import load_images_as_numpy
 from src.models import build_mlp_model, build_cnn_model, build_transfer_model
-from src.features import augment_dataset, extract_hog_features
+from src.features import augment_dataset, extract_hog_features, apply_standard_scaler
 from src.train import compile_model, get_callbacks
 from src.eval import evaluate_model, plot_history
 
@@ -139,6 +139,19 @@ print(f"Original shape: {X_train.shape}")
 print(f"Flattened shape: {X_train_flat.shape}")
 print(f"Each image is now a vector of {X_train_flat.shape[1]:,} features")
 
+# %%
+# Apply StandardScaler for better MLP performance
+print("Applying StandardScaler (zero mean, unit variance)...")
+X_train_scaled, X_val_scaled, X_test_scaled, scaler = apply_standard_scaler(
+    X_train_flat, X_val_flat, X_test_flat
+)
+
+print(f"\nBefore scaling:")
+print(f"  Mean: {X_train_flat.mean():.4f}, Std: {X_train_flat.std():.4f}")
+print(f"After scaling:")
+print(f"  Mean: {X_train_scaled.mean():.4f}, Std: {X_train_scaled.std():.4f}")
+print("StandardScaler improves MLP convergence by normalizing features!")
+
 # %% [markdown]
 # ## 5. Classical ML Baselines
 
@@ -159,10 +172,10 @@ lr_acc = accuracy_score(y_val, y_val_pred_lr)
 print(f"Logistic Regression Validation Accuracy: {lr_acc:.2%}")
 
 # %% [markdown]
-# ## 6. Baseline MLP Model
+# ## 6. Baseline MLP Model (with StandardScaler)
 
 # %%
-mlp_model = build_mlp_model(X_train_flat.shape[1], NUM_CLASSES)
+mlp_model = build_mlp_model(X_train_scaled.shape[1], NUM_CLASSES)
 mlp_model.summary()
 
 # %%
@@ -170,24 +183,24 @@ compile_model(mlp_model)
 callbacks = get_callbacks()
 
 print("="*70)
-print("TRAINING BASELINE MLP")
+print("TRAINING BASELINE MLP (with StandardScaler)")
 print("="*70)
 
 history_mlp = mlp_model.fit(
-    X_train_flat, y_train,
-    validation_data=(X_val_flat, y_val),
+    X_train_scaled, y_train,
+    validation_data=(X_val_scaled, y_val),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     callbacks=callbacks,
     verbose=1
 )
 
-mlp_val_loss, mlp_val_acc = mlp_model.evaluate(X_val_flat, y_val, verbose=0)
+mlp_val_loss, mlp_val_acc = mlp_model.evaluate(X_val_scaled, y_val, verbose=0)
 print(f"\nBaseline MLP Validation Accuracy: {mlp_val_acc:.2%}")
-plot_history(history_mlp, title="Baseline MLP")
+plot_history(history_mlp, title="Baseline MLP (StandardScaler)")
 
 # %% [markdown]
-# ## 7. MLP + Data Augmentation
+# ## 7. MLP + Data Augmentation (with StandardScaler)
 
 # %%
 print("Augmenting training data...")
@@ -197,30 +210,36 @@ print(f"Augmented training size: {len(X_train_aug)}")
 
 X_train_aug_flat = X_train_aug.reshape(X_train_aug.shape[0], -1)
 
+# Apply StandardScaler to augmented data
+print("\nApplying StandardScaler to augmented data...")
+X_train_aug_scaled, X_val_aug_scaled, X_test_aug_scaled, scaler_aug = apply_standard_scaler(
+    X_train_aug_flat, X_val_flat, X_test_flat
+)
+
 # %%
-mlp_aug_model = build_mlp_model(X_train_aug_flat.shape[1], NUM_CLASSES)
+mlp_aug_model = build_mlp_model(X_train_aug_scaled.shape[1], NUM_CLASSES)
 compile_model(mlp_aug_model)
 callbacks_aug = get_callbacks()
 
 print("="*70)
-print("TRAINING MLP + DATA AUGMENTATION")
+print("TRAINING MLP + DATA AUGMENTATION (with StandardScaler)")
 print("="*70)
 
 history_mlp_aug = mlp_aug_model.fit(
-    X_train_aug_flat, y_train_aug,
-    validation_data=(X_val_flat, y_val),
+    X_train_aug_scaled, y_train_aug,
+    validation_data=(X_val_aug_scaled, y_val),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     callbacks=callbacks_aug,
     verbose=1
 )
 
-_, mlp_aug_val_acc = mlp_aug_model.evaluate(X_val_flat, y_val, verbose=0)
+_, mlp_aug_val_acc = mlp_aug_model.evaluate(X_val_aug_scaled, y_val, verbose=0)
 print(f"\nMLP + Augmentation Validation Accuracy: {mlp_aug_val_acc:.2%}")
-plot_history(history_mlp_aug, title="MLP + Data Augmentation")
+plot_history(history_mlp_aug, title="MLP + Augmentation + StandardScaler")
 
 # %% [markdown]
-# ## 8. MLP + HOG Features
+# ## 8. MLP + HOG Features (with StandardScaler)
 
 # %%
 print("Extracting HOG features...")
@@ -231,27 +250,33 @@ X_test_hog = extract_hog_features(X_test)
 print(f"Original features: {X_train_flat.shape[1]:,}")
 print(f"HOG features: {X_train_hog.shape[1]:,}")
 
+# Apply StandardScaler to HOG features
+print("\nApplying StandardScaler to HOG features...")
+X_train_hog_scaled, X_val_hog_scaled, X_test_hog_scaled, scaler_hog = apply_standard_scaler(
+    X_train_hog, X_val_hog, X_test_hog
+)
+
 # %%
-mlp_hog_model = build_mlp_model(X_train_hog.shape[1], NUM_CLASSES)
+mlp_hog_model = build_mlp_model(X_train_hog_scaled.shape[1], NUM_CLASSES)
 compile_model(mlp_hog_model)
 callbacks_hog = get_callbacks()
 
 print("="*70)
-print("TRAINING MLP + HOG FEATURES")
+print("TRAINING MLP + HOG FEATURES (with StandardScaler)")
 print("="*70)
 
 history_mlp_hog = mlp_hog_model.fit(
-    X_train_hog, y_train,
-    validation_data=(X_val_hog, y_val),
+    X_train_hog_scaled, y_train,
+    validation_data=(X_val_hog_scaled, y_val),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     callbacks=callbacks_hog,
     verbose=1
 )
 
-_, mlp_hog_val_acc = mlp_hog_model.evaluate(X_val_hog, y_val, verbose=0)
+_, mlp_hog_val_acc = mlp_hog_model.evaluate(X_val_hog_scaled, y_val, verbose=0)
 print(f"\nMLP + HOG Validation Accuracy: {mlp_hog_val_acc:.2%}")
-plot_history(history_mlp_hog, title="MLP + HOG Features")
+plot_history(history_mlp_hog, title="MLP + HOG + StandardScaler")
 
 # %% [markdown]
 # ## 9. CNN Model
@@ -375,13 +400,13 @@ elif best_model_name == 'CNN':
     X_val_input, X_test_input = X_val, X_test
 elif best_model_name == 'MLP + HOG':
     best_model = mlp_hog_model
-    X_val_input, X_test_input = X_val_hog, X_test_hog
+    X_val_input, X_test_input = X_val_hog_scaled, X_test_hog_scaled
 elif best_model_name == 'MLP + Augmentation':
     best_model = mlp_aug_model
-    X_val_input, X_test_input = X_val_flat, X_test_flat
+    X_val_input, X_test_input = X_val_aug_scaled, X_test_aug_scaled
 else:
     best_model = mlp_model
-    X_val_input, X_test_input = X_val_flat, X_test_flat
+    X_val_input, X_test_input = X_val_scaled, X_test_scaled
 
 evaluate_model(best_model, X_val_input, y_val, X_test_input, y_test, CLASSES)
 

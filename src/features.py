@@ -77,3 +77,28 @@ def extract_hog_features(X, pixels_per_cell=16, cells_per_block=2, orientations=
         features.append(hog_features)
 
     return np.array(features)
+
+
+def apply_standard_scaler(X_train, X_val, X_test):
+    """
+    Apply StandardScaler to normalize features (zero mean, unit variance).
+
+    Critical for MLP: normalized features lead to faster convergence and better accuracy.
+    Fit scaler on training data only, then transform all sets.
+
+    Args:
+        X_train: training features (2D array)
+        X_val: validation features (2D array)
+        X_test: test features (2D array)
+
+    Returns:
+        X_train_scaled, X_val_scaled, X_test_scaled, scaler
+    """
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+
+    return X_train_scaled, X_val_scaled, X_test_scaled, scaler
