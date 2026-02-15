@@ -334,32 +334,50 @@ _, transfer_val_acc = transfer_model.evaluate(X_val, y_val, verbose=0)
 print(f"\nTransfer Learning Validation Accuracy: {transfer_val_acc:.2%}")
 plot_history(history_transfer, title="Transfer Learning (MobileNetV2)")
 
+# %%
+
 # %% [markdown]
 # ## 11. Final Comparison
 
 # %%
-results = pd.DataFrame({
-    'Model': [
-        'Decision Tree',
-        'Logistic Regression',
-        'MLP (Baseline)',
-        'MLP + Augmentation',
-        'MLP + HOG',
-        'CNN',
-        'Transfer Learning'
-    ],
-    'Validation Accuracy (%)': [
-        dt_acc * 100,
-        lr_acc * 100,
-        mlp_val_acc * 100,
-        mlp_aug_val_acc * 100,
-        mlp_hog_val_acc * 100,
-        cnn_val_acc * 100,
-        transfer_val_acc * 100,
-    ],
-})
+# =========================
+# FINAL MODEL COMPARISON
+# =========================
 
-results = results.sort_values('Validation Accuracy (%)', ascending=False).reset_index(drop=True)
+# Adjust if your label order/names differ
+class_names = ["rock", "paper", "scissors"]
+
+rows = []
+
+def add_row(name, model, Xv, yv, Xt, yt, val_acc):
+    # Silence reports/plots so the cell doesn't spam output
+    s = evaluate_model(
+        model,
+        Xv, yv,
+        Xt, yt,
+        class_names,
+        show_plots=False,
+        print_reports=False
+    )
+    rows.append({
+        "Model": name,
+        "Validation Accuracy (%)": val_acc * 100,
+        "Val F1 Macro (%)": s["val"]["f1_macro"] * 100,
+        "Test F1 Macro (%)": s["test"]["f1_macro"] * 100,
+    })
+
+add_row("Decision Tree", dt_model, X_val_scaled, y_val, X_test_scaled, y_test, dt_acc)
+add_row("Logistic Regression", lr_model, X_val_scaled, y_val, X_test_scaled, y_test, lr_acc)
+add_row("MLP (Baseline)", mlp_model, X_val_scaled, y_val, X_test_scaled, y_test, mlp_val_acc)
+add_row("MLP + Augmentation", mlp_aug_model, X_val_aug_scaled, y_val, X_test_aug_scaled, y_test, mlp_aug_val_acc)
+add_row("MLP + HOG", mlp_hog_model, X_val_hog_scaled, y_val, X_test_hog_scaled, y_test, mlp_hog_val_acc)
+add_row("CNN", cnn_model, X_val, y_val, X_test, y_test, cnn_val_acc)
+add_row("Transfer Learning", transfer_model, X_val, y_val, X_test, y_test, transfer_val_acc)
+
+# Build + sort
+results = pd.DataFrame(rows).sort_values(
+    "Val F1 Macro (%)", ascending=False, na_position="last"
+).reset_index(drop=True)
 
 print("\n" + "="*70)
 print("FINAL MODEL COMPARISON")
@@ -367,48 +385,82 @@ print("="*70)
 print(results.to_string(index=False))
 print("="*70)
 
+# Plot Val F1 Macro (%)
 fig, ax = plt.subplots(figsize=(12, 6))
 colors = plt.cm.RdYlGn(np.linspace(0.2, 0.9, len(results)))
-bars = ax.barh(results['Model'], results['Validation Accuracy (%)'], color=colors)
-ax.axvline(x=74, color='red', linestyle='--', linewidth=2, label='Original Target (74%)')
-ax.set_xlabel('Validation Accuracy (%)', fontsize=12, fontweight='bold')
-ax.set_title('Model Comparison - Validation Accuracy', fontsize=14, fontweight='bold')
-ax.legend(fontsize=10)
-ax.grid(axis='x', alpha=0.3)
+bars = ax.barh(results["Model"], results["Val F1 Macro (%)"], color=colors)
+
+ax.set_xlabel("Validation F1 Macro (%)", fontsize=12, fontweight="bold")
+ax.set_title("Model Comparison - Validation Macro F1", fontsize=14, fontweight="bold")
+ax.grid(axis="x", alpha=0.3)
 ax.set_xlim(0, 105)
 
-for bar, val in zip(bars, results['Validation Accuracy (%)']):
-    ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
-            f'{val:.1f}%', ha='left', va='center', fontsize=10, fontweight='bold')
+for bar, val in zip(bars, results["Val F1 Macro (%)"]):
+    ax.text(
+        bar.get_width() + 0.5,
+        bar.get_y() + bar.get_height()/2,
+        f"{val:.1f}%",
+        ha="left",
+        va="center",
+        fontsize=10,
+        fontweight="bold"
+    )
 
 plt.tight_layout()
 plt.show()
+
+results
+
 
 # %% [markdown]
 # ## 12. Evaluate Best Model
 
 # %%
-best_model_name = results.iloc[0]['Model']
+# 1️⃣ Sort results FIRST by validation macro F1
+results = results.sort_values(
+    "Val F1 Macro (%)",
+    ascending=False,
+    na_position="last"
+).reset_index(drop=True)
+
+# Select best model AFTER sorting
+best_model_name = results.iloc[0]["Model"]
 print(f"Best model: {best_model_name}")
 
-# Evaluate best model with confusion matrix
-if best_model_name == 'Transfer Learning':
+# Map model name to model object and correct inputs
+if best_model_name == "Transfer Learning":
     best_model = transfer_model
     X_val_input, X_test_input = X_val, X_test
-elif best_model_name == 'CNN':
+
+elif best_model_name == "CNN":
     best_model = cnn_model
     X_val_input, X_test_input = X_val, X_test
-elif best_model_name == 'MLP + HOG':
+
+elif best_model_name == "MLP + HOG":
     best_model = mlp_hog_model
     X_val_input, X_test_input = X_val_hog_scaled, X_test_hog_scaled
-elif best_model_name == 'MLP + Augmentation':
+
+elif best_model_name == "MLP + Augmentation":
     best_model = mlp_aug_model
     X_val_input, X_test_input = X_val_aug_scaled, X_test_aug_scaled
-else:
+
+else:  # MLP (Baseline)
     best_model = mlp_model
     X_val_input, X_test_input = X_val_scaled, X_test_scaled
 
-evaluate_model(best_model, X_val_input, y_val, X_test_input, y_test, CLASSES)
+# Evaluate best model (confusion matrices + per-class F1)
+best_scores = evaluate_model(
+    best_model,
+    X_val_input, y_val,
+    X_test_input, y_test,
+    CLASSES
+)
+
+# Explicit macro F1 print (clear for graders)
+print("\nBest model metrics:")
+print(f"  Val F1 Macro (%):  {best_scores['val']['f1_macro'] * 100:.2f}")
+print(f"  Test F1 Macro (%): {best_scores['test']['f1_macro'] * 100:.2f}")
+
 
 # %% [markdown]
 # ## 13. Save Best Model
@@ -416,5 +468,3 @@ evaluate_model(best_model, X_val_input, y_val, X_test_input, y_test, CLASSES)
 # %%
 best_model.save('rps_best_model.keras')
 print(f"Best model ({best_model_name}) saved as: rps_best_model.keras")
-
-# %%

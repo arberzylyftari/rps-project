@@ -19,10 +19,9 @@ def augment_dataset(X, y, augment_factor=2, seed=42):
     """
     augmentation = tf.keras.Sequential([
         tf.keras.layers.RandomFlip("horizontal", seed=seed),
-        tf.keras.layers.RandomRotation(0.15, seed=seed),
-        tf.keras.layers.RandomZoom(0.1, seed=seed),
+        tf.keras.layers.RandomRotation(0.05, seed=seed),
+        tf.keras.layers.RandomZoom((-0.1, 0.0), seed=seed),
         tf.keras.layers.RandomBrightness(0.1, seed=seed),
-        tf.keras.layers.RandomContrast(0.1, seed=seed),
     ])
 
     augmented_images = [X]
