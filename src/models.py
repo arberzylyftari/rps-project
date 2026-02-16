@@ -79,26 +79,23 @@ def build_cnn_model(
     # L2 regularizer for conv layers (optional)
     reg = keras.regularizers.l2(conv_l2) if conv_l2 and conv_l2 > 0 else None
 
-    # Block 1
+    # Block 1 — NO dropout between conv blocks (preserves spatial features)
     x = keras.layers.Conv2D(32, (3, 3), padding="same", kernel_regularizer=reg)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Activation("relu")(x)
     x = keras.layers.MaxPooling2D((2, 2))(x)
-    x = keras.layers.Dropout(0.25)(x)
 
     # Block 2
     x = keras.layers.Conv2D(64, (3, 3), padding="same", kernel_regularizer=reg)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Activation("relu")(x)
     x = keras.layers.MaxPooling2D((2, 2))(x)
-    x = keras.layers.Dropout(0.25)(x)
 
     # Block 3
     x = keras.layers.Conv2D(128, (3, 3), padding="same", kernel_regularizer=reg)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Activation("relu")(x)
     x = keras.layers.MaxPooling2D((2, 2))(x)
-    x = keras.layers.Dropout(0.25)(x)
 
     # Block 4
     x = keras.layers.Conv2D(256, (3, 3), padding="same", kernel_regularizer=reg)(x)
@@ -106,7 +103,7 @@ def build_cnn_model(
     x = keras.layers.Activation("relu")(x)
     x = keras.layers.GlobalAveragePooling2D()(x)
 
-    # Classifier head
+    # Classifier head — dropout ONLY here
     x = keras.layers.Dense(256)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Activation("relu")(x)

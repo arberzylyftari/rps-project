@@ -2,7 +2,7 @@
 from tensorflow import keras
 
 
-def compile_model(model, learning_rate: float = 0.001):
+def compile_model(model, learning_rate: float = 0.0005):
     """Compile model with Adam optimizer and sparse categorical crossentropy."""
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
